@@ -1,10 +1,10 @@
 {
   "name": "devicectl",
-  "version": "0.0.1",
+  "version": "0.0.2-dev",
   "description": "library for Xcode 15+ devicectl utility on macOS",
   "repository": {
     "type": "git",
-    "url": "https://github.com/ios-control/devicectl.git"
+    "url": "git+https://github.com/ios-control/devicectl.git"
   },
   "main": "lib/devicectl.js",
   "scripts": {
