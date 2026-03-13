@@ -30,6 +30,10 @@ const spawnMock = test.mock.method(childProcess, 'spawnSync');
 
 const devicectl = require('../lib/devicectl');
 
+test.beforeEach(() => {
+  spawnMock.mock.resetCalls();
+});
+
 test('exports', (t) => {
   t.assert ||= require('node:assert');
 
@@ -37,7 +41,12 @@ test('exports', (t) => {
   t.assert.equal(typeof devicectl.devicectl_version, 'function');
   t.assert.equal(typeof devicectl.xcode_version, 'function');
   t.assert.equal(typeof devicectl.help, 'function');
+  t.assert.equal(typeof devicectl.ListTypes, 'object');
   t.assert.equal(typeof devicectl.list, 'function');
+  t.assert.equal(typeof devicectl.InfoTypes, 'object');
+  t.assert.equal(typeof devicectl.info, 'function');
+  t.assert.equal(typeof devicectl.install, 'function');
+  t.assert.equal(typeof devicectl.launch, 'function');
 });
 
 test('check_prerequisites fail', (t) => {
@@ -47,9 +56,8 @@ test('check_prerequisites fail', (t) => {
     return { status: 1 };
   });
 
-  const retObj = devicectl.check_prerequisites();
-  t.assert.ok(retObj.stdout);
-  t.assert.match(retObj.stdout, /devicectl was not found./);
+  const result = devicectl.check_prerequisites();
+  t.assert.equal(result, false);
 });
 
 test('check_prerequisites success', (t) => {
@@ -59,8 +67,8 @@ test('check_prerequisites success', (t) => {
     return { status: 0 };
   });
 
-  const retObj = devicectl.check_prerequisites();
-  t.assert.equal(retObj.stdout, undefined);
+  const result = devicectl.check_prerequisites();
+  t.assert.equal(result, true);
 });
 
 test('xcode version', (t) => {
@@ -86,10 +94,6 @@ test('devicectl version', (t) => {
 });
 
 test('devicectl help', async (ctx) => {
-  ctx.beforeEach((t) => {
-    spawnMock.mock.resetCalls();
-  });
-
   await ctx.test('with no arguments', (t) => {
     t.assert ||= require('node:assert');
 
@@ -115,12 +119,21 @@ test('devicectl help', async (ctx) => {
 
 test('devicectl list', async (ctx) => {
   ctx.beforeEach((t) => {
-    spawnMock.mock.resetCalls();
-
     t.mock.method(console, 'error', () => {});
   });
 
-  await ctx.test('with a successful response', (t) => {
+  await ctx.test('with bad argument', (t) => {
+    t.assert ||= require('node:assert');
+
+    spawnMock.mock.mockImplementationOnce(() => {
+      return { status: 64, stderr: "Error: Unexpected argument 'bad_command'" };
+    });
+
+    const retObj = devicectl.list('bad_command');
+    t.assert.match(retObj.stderr, /Unexpected argument/);
+  });
+
+  await ctx.test('with no arguments', (t) => {
     t.assert ||= require('node:assert');
 
     spawnMock.mock.mockImplementationOnce(() => {
@@ -130,6 +143,18 @@ test('devicectl list', async (ctx) => {
     const retObj = devicectl.list();
     t.assert.deepEqual(spawnMock.mock.calls[0].arguments[1], ['devicectl', 'list', 'devices', '--quiet', '--json-output', '/dev/stdout']);
     t.assert.deepEqual(retObj.json, { result: { devices: [] } });
+  });
+
+  await ctx.test('with preferredDDI argument', (t) => {
+    t.assert ||= require('node:assert');
+
+    spawnMock.mock.mockImplementationOnce(() => {
+      return { status: 0, stdout: '{"result":{"platforms":[]}}' };
+    });
+
+    const retObj = devicectl.list('preferredDDI');
+    t.assert.deepEqual(spawnMock.mock.calls[0].arguments[1], ['devicectl', 'list', 'preferredDDI', '--quiet', '--json-output', '/dev/stdout']);
+    t.assert.deepEqual(retObj.json, { result: { platforms: [] } });
   });
 
   await ctx.test('with parsing error', (t) => {
@@ -142,5 +167,130 @@ test('devicectl list', async (ctx) => {
     const retObj = devicectl.list();
     t.assert.match(console.error.mock.calls[0].arguments[0], /SyntaxError: Unexpected token/);
     t.assert.equal(retObj.json, undefined);
+  });
+});
+
+test('devicectl info', async (ctx) => {
+  ctx.beforeEach((t) => {
+    t.mock.method(console, 'error', () => {});
+  });
+
+  await ctx.test('with a valid subcommand', (t) => {
+    t.assert ||= require('node:assert');
+
+    spawnMock.mock.mockImplementationOnce(() => {
+      return { status: 0, stdout: '{"result":{}}' };
+    });
+
+    const retObj = devicectl.info('apps', 'device_id');
+    t.assert.deepEqual(spawnMock.mock.calls[0].arguments[1], ['devicectl', 'device', 'info', 'apps', '--device', 'device_id', '--quiet', '--json-output', '/dev/stdout']);
+    t.assert.deepEqual(retObj.json, { result: {} });
+  });
+
+  await ctx.test('with parsing error', (t) => {
+    t.assert ||= require('node:assert');
+
+    spawnMock.mock.mockImplementationOnce(() => {
+      return { status: 0, stdout: 'This is not valid JSON' };
+    });
+
+    const retObj = devicectl.info('details', 'device_id');
+    t.assert.match(console.error.mock.calls[0].arguments[0], /SyntaxError: Unexpected token/);
+    t.assert.equal(retObj.json, undefined);
+  });
+
+  await ctx.test('with an invalid subcommand', (t) => {
+    t.assert ||= require('node:assert');
+
+    spawnMock.mock.mockImplementationOnce(() => {
+      return { status: 64, stderr: "Error: Unexpected argument 'bad_command'" };
+    });
+
+    const retObj = devicectl.info('bad_command');
+    t.assert.match(retObj.stderr, /Unexpected argument/);
+  });
+});
+
+test('devicectl install', async (ctx) => {
+  await ctx.test('with no options', (t) => {
+    t.assert ||= require('node:assert');
+
+    spawnMock.mock.mockImplementationOnce(() => {
+      return { status: 0, stdout: '' };
+    });
+
+    devicectl.install('device_id', 'path/to/bundle.app');
+    t.assert.deepEqual(spawnMock.mock.calls[0].arguments[1], ['devicectl', 'device', 'install', 'app', '--device', 'device_id', 'path/to/bundle.app']);
+    t.assert.deepEqual(spawnMock.mock.calls[0].arguments[2], { encoding: 'utf8' });
+  });
+
+  await ctx.test('with stdio option', (t) => {
+    t.assert ||= require('node:assert');
+
+    spawnMock.mock.mockImplementationOnce(() => {
+      return { status: 0, stdout: '' };
+    });
+
+    devicectl.install('device_id', 'path/to/bundle.app', { stdio: 'inherit' });
+    t.assert.deepEqual(spawnMock.mock.calls[0].arguments[1], ['devicectl', 'device', 'install', 'app', '--device', 'device_id', 'path/to/bundle.app']);
+    t.assert.deepEqual(spawnMock.mock.calls[0].arguments[2], { encoding: 'utf8', stdio: 'inherit' });
+  });
+});
+
+test('devicectl launch', async (ctx) => {
+  await ctx.test('with no argv arguments', (t) => {
+    t.assert ||= require('node:assert');
+
+    spawnMock.mock.mockImplementationOnce(() => {
+      return { status: 0, stdout: '' };
+    });
+
+    devicectl.launch('device_id', 'com.example.myapp');
+    t.assert.deepEqual(spawnMock.mock.calls[0].arguments[1], ['devicectl', 'device', 'process', 'launch', '--device', 'device_id', 'com.example.myapp']);
+    t.assert.deepEqual(spawnMock.mock.calls[0].arguments[2], { encoding: 'utf8' });
+  });
+
+  await ctx.test('with argv arguments', (t) => {
+    t.assert ||= require('node:assert');
+
+    spawnMock.mock.mockImplementationOnce(() => {
+      return { status: 0, stdout: '' };
+    });
+
+    devicectl.launch('device_id', 'com.example.myapp', ['https://example.com']);
+    t.assert.deepEqual(spawnMock.mock.calls[0].arguments[1], ['devicectl', 'device', 'process', 'launch', '--device', 'device_id', 'com.example.myapp', 'https://example.com']);
+  });
+
+  await ctx.test('with startStopped option', (t) => {
+    t.assert ||= require('node:assert');
+
+    spawnMock.mock.mockImplementationOnce(() => {
+      return { status: 0, stdout: '' };
+    });
+
+    devicectl.launch('device_id', 'com.example.myapp', [], { startStopped: true });
+    t.assert.deepEqual(spawnMock.mock.calls[0].arguments[1], ['devicectl', 'device', 'process', 'launch', '--device', 'device_id', '--start-stopped', 'com.example.myapp']);
+  });
+
+  await ctx.test('with console option', (t) => {
+    t.assert ||= require('node:assert');
+
+    spawnMock.mock.mockImplementationOnce(() => {
+      return { status: 0, stdout: '' };
+    });
+
+    devicectl.launch('device_id', 'com.example.myapp', [], { console: true });
+    t.assert.deepEqual(spawnMock.mock.calls[0].arguments[1], ['devicectl', 'device', 'process', 'launch', '--device', 'device_id', '--console', 'com.example.myapp']);
+  });
+
+  await ctx.test('with stdio option', (t) => {
+    t.assert ||= require('node:assert');
+
+    spawnMock.mock.mockImplementationOnce(() => {
+      return { status: 0, stdout: '' };
+    });
+
+    devicectl.launch('device_id', 'com.example.myapp', [], { stdio: 'inherit' });
+    t.assert.deepEqual(spawnMock.mock.calls[0].arguments[2], { encoding: 'utf8', stdio: 'inherit' });
   });
 });
