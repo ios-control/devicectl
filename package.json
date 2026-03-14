@@ -1,6 +1,6 @@
 {
   "name": "devicectl",
-  "version": "0.0.2-dev",
+  "version": "0.0.3-dev.0",
   "description": "library for Xcode 15+ devicectl utility on macOS",
   "repository": {
     "type": "git",
